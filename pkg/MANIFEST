@@ -1,0 +1,59 @@
+name:  %%NAME%%
+version: %%VERSION_NUM%%
+origin:  local/%%NAME%%
+comment: %%COMMENT%%
+www:  No www
+maintainer: not maintened
+prefix:  /usr/local
+licenselogic: single
+licenses: [APACHE]
+flatsize: %%FLATSIZE%%
+categories: [local]
+
+deps: { }
+
+desc = <<EOD
+%%COMMENT%%
+
+EOD;
+
+scripts: {
+    pre-install = <<EOD
+if [ -n "${PKG_ROOTDIR}" ] && [ "${PKG_ROOTDIR}" != "/" ]; then
+  PW="/usr/sbin/pw -R ${PKG_ROOTDIR}"
+else
+  PW=/usr/sbin/pw
+fi
+echo "===> Creating group."
+if ! ${PW} groupshow %%NAME%% >/dev/null 2>&1; then
+  echo "Creating group '%%NAME%%' with gid '%%GID%%'."
+  ${PW} groupadd %%NAME%% -g %%GID%%
+else
+  echo "Using exising group '%%NAME%%'"
+fi
+echo "===> Creating user."
+if ! ${PW} usershow '%%NAME%%' >/dev/null 2>&1; then
+  echo "Creating user '%%NAME%%' with uid '%%UID%%'."
+  ${PW} useradd %%NAME%% -u %%UID%% -g %%GID%% -h - -d /usr/local/lib/%%NAME%%
+else
+  echo "Using existing user '%%NAME%%'."
+fi
+EOD;
+
+    post-install = <<EOD
+/bin/mkdir -p /var/log/runner_log /var/run/erl_pipes
+/usr/sbin/chown %%NAME%%:%%NAME%% /var/log/runner_log /var/run/erl_pipes
+/bin/mkdir -p /var/db/%%NAME%% /var/spool/%%NAME%% /var/log/%%NAME%%
+/usr/sbin/chown %%NAME%%:%%NAME%% /var/db/%%NAME%% /var/spool/%%NAME%% /var/log/%%NAME%%
+EOD;
+
+   post-deinstall = <<EOD
+if [ -n "${PKG_ROOTDIR}" ] && [ "${PKG_ROOTDIR}" != "/" ]; then
+  PW="/usr/sbin/pw -R ${PKG_ROOTDIR}"
+else
+  PW=/usr/sbin/pw
+fi
+${PW} groupdel %%NAME%%
+${PW} userdel  %%NAME%%
+EOD;
+}

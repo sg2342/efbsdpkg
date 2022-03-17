@@ -1,0 +1,102 @@
+#!/bin/sh
+set -e
+
+
+REL_NAME=${REL_NAME:-"%%NAME%%"}
+
+PIPE_DIR="${PIPE_DIR:-/var/run/erl_pipes/}"
+RUNNER_LOG_DIR="${RUNNER_LOG_DIR:-/var/log/runner_log}"
+
+#find release root dir
+SCRIPT=$(readlink $0 || true)
+if [ -z $SCRIPT ]; then
+    SCRIPT=$0
+fi;
+SCRIPT_DIR="$(cd `dirname "$SCRIPT"` && pwd -P)"
+RELEASE_ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+
+# get erts and rel vsns
+START_ERL_DATA="$RELEASE_ROOT_DIR/releases/start_erl.data"
+read -r ERTS_VSN REL_VSN < "$START_ERL_DATA" || true
+
+REL_DIR="$RELEASE_ROOT_DIR/releases/$REL_VSN"
+ERL_OPTS=""
+ERTS_DIR="$RELEASE_ROOT_DIR/erts-$ERTS_VSN"
+SYS_CONFIG="$REL_DIR/sys.config"
+VM_ARGS="$REL_DIR/vm.args"
+
+export ROOTDIR="$RELEASE_ROOT_DIR"
+export BINDIR="$ERTS_DIR/bin"
+export EMU="beam"
+export PROGNAME="erl"
+export LD_LIBRARY_PATH="$ERTS_DIR/lib:$LD_LIBRARY_PATH"
+
+ERTS_LIB_DIR="$ERTS_DIR/../lib"
+[ -f "$REL_DIR/$REL_NAME.boot" ] && BOOTFILE="$REL_NAME" || BOOTFILE=start
+cd "$ROOTDIR"
+
+
+RUN_ERL_DISABLE_FLOWCNTRL=${RUN_ERL_DISABLE_FLOWCNTRL:-true}
+export RUN_ERL_DISABLE_FLOWCNTRL
+
+export HEART_COMMAND="pkill -HUP -f JAIL_RESTART"
+export HEART_BEAT_TIMEOUT=30
+
+export TERM=xterm
+
+beam_pid() {
+        _ppid=$(pgrep -f "$BINDIR"/run_erl)
+        _pid=$(pgrep -P $_ppid)
+        read -r _ _candidate _ < $RUNNER_LOG_DIR/run_erl.log
+        [ "[$_pid]" = "$_candidate" ] && echo $_pid
+}
+
+fail_if_not_running() {
+    if [ -z "$PID" ]; then
+        echo "$REL_NAME is not running"
+        exit 1
+    fi
+}
+
+fail_if_running() {
+    if [ "$PID" ]; then
+        echo "$REL_NAME is running as pid $PID"
+        exit 1
+    fi
+}
+
+PID=$(beam_pid 2>/dev/null || true)
+
+case "$1" in
+    shell)
+        fail_if_not_running
+        "$BINDIR"/to_erl "$PIPE_DIR"
+        ;;
+    status)
+        fail_if_not_running
+        echo "$REL_NAME is running as pid $PID"
+        ;;
+    stop)
+        fail_if_not_running
+        kill -TERM "$PID" && pwait -v "$PID"
+        "$BINDIR"/epmd -kill
+        ;;
+    start)
+        fail_if_running
+        shift
+        ARGS="$*"
+        # Build arguments for erlexec
+        set -- "$ERL_OPTS"
+        [ "$SYS_CONFIG" ] && set -- "$@" -config "$SYS_CONFIG"
+        [ "$VM_ARGS" ] && set -- "$@" -args_file "$VM_ARGS"
+        set -- "$@" -mode embedded
+        set -- "$@" -boot_var ERTS_LIB_DIR "$ERTS_LIB_DIR" -boot "$REL_DIR/$BOOTFILE" "$ARGS"
+
+        # Boot the release
+        "$BINDIR"/run_erl -daemon "$PIPE_DIR" "$RUNNER_LOG_DIR" "exec $BINDIR/erlexec $*"
+        ;;
+    *)
+        echo "Usage: $SCRIPT {start|stop|status|shell}"
+        exit 1
+        ;;
+esac

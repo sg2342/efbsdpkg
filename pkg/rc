@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# PROVIDE: %%NAME%%
+# REQUIRE: DAEMON
+#
+#
+
+. /etc/rc.subr
+
+name="%%NAME%%"
+rcvar=${name}_enable
+
+: ${%%NAME%%_user:="%%NAME%%"}
+: ${%%NAME%%_dir:="/usr/local/lib/%%NAME%%"}
+: ${%%NAME%%_jntool:="${%%NAME%%_dir}/bin/jntool"}
+
+start_cmd="${name}_start"
+start_precmd="${name}_prestart"
+status_cmd="${name}_status"
+stop_cmd="${name}_stop"
+shell_cmd="${name}_shell"
+extra_commands="status shell"
+
+%%NAME%%_prestart() {
+        local O
+        O=${%%NAME%%_opt}
+        mkdir -p /var/log/runner_log /var/run/erl_pipes
+        chown -R ${%%NAME%%_user} /var/log/runner_log /var/run/erl_pipes
+}
+
+%%NAME%%_start() {
+        su -l ${%%NAME%%_user} -c "${%%NAME%%_jntool} start"
+}
+
+%%NAME%%_stop() {
+        su -l ${%%NAME%%_user} -c "${%%NAME%%_jntool} stop"
+}
+
+%%NAME%%_status() {
+       su -l ${%%NAME%%_user} -c "${%%NAME%%_jntool} status"
+}
+
+%%NAME%%_shell() {
+       su -l ${%%NAME%%_user} -c "${%%NAME%%_jntool} shell"
+}
+
+load_rc_config ${name}
+run_rc_command "$1"
